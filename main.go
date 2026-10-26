@@ -3,10 +3,12 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/shirou/gopsutil/v4/mem"
+	"net/http"
 	"os"
 	"runtime"
-	"net/http"
+
+	"github.com/shirou/gopsutil/v4/cpu"
+	"github.com/shirou/gopsutil/v4/mem"
 )
 
 type Specs struct {
@@ -17,38 +19,52 @@ type Specs struct {
 	Cores    int    `json:"cores"`
 	TotalRAM uint64 `json:"total_ram"`
 }
- 
- 
-  func healthHandler(w http.ResponseWriter, r*http.Request){
-  w.Header().Set("Content-Type","application/json")
-  }
+
+func healthHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+}
+
 func main() {
 	v, err := mem.VirtualMemory()
 	if err != nil {
 		fmt.Println("error:", err)
 		return
 	}
+
 	hostname, err := os.Hostname()
 	if err != nil {
 		fmt.Println("error:", err)
 		return
 	}
+
+	info, err := cpu.Info()
+	if err != nil {
+		fmt.Println("error:", err)
+		return
+	}
+	if len(info) == 0 {
+		fmt.Println("error: no CPU info available")
+		return
+	}
+
 	specs := Specs{
 		Hostname: hostname,
 		OS:       runtime.GOOS,
 		Arch:     runtime.GOARCH,
+		CPU:      info[0].ModelName,
 		Cores:    runtime.NumCPU(),
 		TotalRAM: v.Total,
 	}
+
 	data, err := json.MarshalIndent(specs, "", "  ")
 	if err != nil {
 		fmt.Println("err:", err)
 		return
 	}
 	fmt.Println(string(data))
+
 	http.HandleFunc("/health", healthHandler)
-	
+
 	fmt.Println("Server running on :8080")
 	http.ListenAndServe(":8080", nil)
-
 }
