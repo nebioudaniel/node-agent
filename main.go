@@ -25,6 +25,12 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(w, `{"status":"ok"}`)
 }
 
+ func specesHandler(s Specs)http.HandlerFunc{
+ return func (w http.ResponseWriter, r*http.Request){
+ w.Header().Set("Content-Type","application/json")
+ json.NewEncoder(w).Encode(s)
+ }
+ }
 func main() {
 	v, err := mem.VirtualMemory()
 	if err != nil {
@@ -65,7 +71,7 @@ func main() {
 	fmt.Println(string(data))
 
 	http.HandleFunc("/health", healthHandler)
-
+	http.HandleFunc("/specs",specesHandler(specs))
 	fmt.Println("Server running on :8080")
 	http.ListenAndServe(":8080", nil)
 }
