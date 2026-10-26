@@ -6,6 +6,7 @@ import (
 	"github.com/shirou/gopsutil/v4/mem"
 	"os"
 	"runtime"
+	"net/http"
 )
 
 type Specs struct {
@@ -16,7 +17,11 @@ type Specs struct {
 	Cores    int    `json:"cores"`
 	TotalRAM uint64 `json:"total_ram"`
 }
-
+ 
+ 
+  func healthHandler(w http.ResponseWriter, r*http.Request){
+  w.Header().Set("Content-Type","application/json")
+  }
 func main() {
 	v, err := mem.VirtualMemory()
 	if err != nil {
@@ -41,5 +46,9 @@ func main() {
 		return
 	}
 	fmt.Println(string(data))
+	http.HandleFunc("/health", healthHandler)
+	
+	fmt.Println("Server running on :8080")
+	http.ListenAndServe(":8080", nil)
 
 }
