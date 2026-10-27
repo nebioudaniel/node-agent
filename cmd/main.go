@@ -31,6 +31,7 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
  json.NewEncoder(w).Encode(s)
  }
  }
+
 func main() {
 	v, err := mem.VirtualMemory()
 	if err != nil {
