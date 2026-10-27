@@ -16,19 +16,23 @@ func main() {
 	name := flag.String("name", "", "Override reported hostname")
 	flag.Parse()
 
-	s, err := specs.Collect()
-	if err != nil {
-		log.Fatalf("collect system specs: %v", err)
-	}
+	collect := func() (specs.Specs, error) {
+		s, err := specs.Collect()
+		if err != nil {
+			return specs.Specs{}, err
+		}
 
-	if *name != "" {
-		s.Hostname = *name
+		if *name != "" {
+			s.Hostname = *name
+		}
+
+		return s, nil
 	}
 
 	addr := ":" + strconv.Itoa(*port)
-	handler := server.NewHandler(s)
+	handler := server.NewHandler(collect)
 
-	fmt.Printf("Agent %q starting on %s\n", s.Hostname, addr)
+	fmt.Printf("Agent starting on %s\n", addr)
 
 	if err := http.ListenAndServe(addr, handler); err != nil {
 		log.Fatalf("HTTP server failed: %v", err)
