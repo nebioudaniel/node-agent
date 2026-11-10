@@ -1,49 +1,44 @@
 package main
 
 import (
-	"encoding/json"
+	"context"
+	"errors"
+	"flag"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"time"
+
+	"node-agent/internal/coordinator"
 )
 
-type Heartbeat struct {
-	WorkerID string `json:"worker_id"`
-	Hostname string `json:"hostname"`
-	OS       string `json:"os"`
-	Arch     string `json:"arch"`
-	Cores    int    `json:"cores"`
-	TotalRAM uint64 `json:"total_ram"`
-}
-
 func main() {
-	mux := http.NewServeMux()
+	addr := flag.String("addr", ":9090", "address to listen on")
+	flag.Parse()
 
-	mux.HandleFunc("/heartbeat", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
+	srv := &http.Server{
+		Addr:    *addr,
+		Handler: coordinator.NewHandler(),
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	go func() {
+		log.Printf("coordinator listening on %s", *addr)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("server error: %v", err)
 		}
+	}()
 
-		var hb Heartbeat
-		if err := json.NewDecoder(r.Body).Decode(&hb); err != nil {
-			http.Error(w, "invalid JSON", http.StatusBadRequest)
-			return
-		}
+	<-ctx.Done()
+	log.Println("shutting down...")
 
-		if hb.WorkerID == "" || hb.Hostname == "" {
-			http.Error(w, "worker_id and hostname are required", http.StatusBadRequest)
-			return
-		}
-
-		log.Printf("heartbeat received from worker %s (%s)", hb.WorkerID, hb.Hostname)
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]string{
-			"status": "received",
-		})
-	})
-
-	log.Println("coordinator listening on :8081")
-	log.Fatal(http.ListenAndServe(":8081", mux))
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Printf("shutdown error: %v", err)
+	}
+	log.Println("coordinator stopped")
 }
