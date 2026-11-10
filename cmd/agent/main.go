@@ -10,12 +10,11 @@ import (
 	"node-agent/internal/specs"
 	"os"
 	"os/signal"
-	"strconv"
 	"time"
 )
 
 func main() {
-	port := flag.Int("port", 8080, "HTTP server port")
+	listen := flag.String("listen", "127.0.0.1:8080", "address to listen on (host:port)")
 	name := flag.String("name", "", "Override reported hostname")
 	flag.Parse()
 
@@ -32,7 +31,7 @@ func main() {
 		return s, nil
 	}
 
-	addr := ":" + strconv.Itoa(*port)
+	addr := *listen
 	handler := server.NewHandler(collect)
 
 	fmt.Printf("Agent starting on %s\n", addr)
