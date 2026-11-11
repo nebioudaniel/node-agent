@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -15,7 +15,7 @@ import (
 
 func main() {
 	addr := flag.String("addr", ":9090", "address to listen on")
-	flag.Parse()
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
 
 	srv := &http.Server{
 		Addr:    *addr,
@@ -26,19 +26,20 @@ func main() {
 	defer stop()
 
 	go func() {
-		log.Printf("coordinator listening on %s", *addr)
+		slog.Info("coordinator listening", "addr", *addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatalf("server error: %v", err)
+			slog.Error("server error", "err", err)
+			os.Exit(1)
 		}
 	}()
 
 	<-ctx.Done()
-	log.Println("shutting down...")
+	slog.Info("coordinator shutting down")
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Printf("shutdown error: %v", err)
+		slog.Error("shutdown error", "err", err)
 	}
-	log.Println("coordinator stopped")
+	slog.Info("coordinaor stopped")
 }

@@ -1,2 +1,5 @@
 /agent
 /node-agent
+bin/
+/cmd/agent/agent
+/cmd/coordinator/coordinator

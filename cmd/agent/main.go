@@ -3,8 +3,7 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"node-agent/internal/server"
 	"node-agent/internal/specs"
@@ -16,7 +15,8 @@ import (
 func main() {
 	listen := flag.String("listen", "127.0.0.1:8080", "address to listen on (host:port)")
 	name := flag.String("name", "", "Override reported hostname")
-	flag.Parse()
+	//this build a logger that write text lines to stderr and makes it the default.
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
 
 	collect := func() (specs.Specs, error) {
 		s, err := specs.Collect()
@@ -33,8 +33,7 @@ func main() {
 
 	addr := *listen
 	handler := server.NewHandler(collect)
-
-	fmt.Printf("Agent starting on %s\n", addr)
+	slog.Info("agent starting", "addr", addr)
 	srv := &http.Server{
 		Addr:    addr,
 		Handler: handler,
@@ -47,7 +46,8 @@ func main() {
 	go func() {
 		if err := srv.ListenAndServe(); err != nil &&
 			err != http.ErrServerClosed {
-			log.Fatalf("HTTP server failed: %v", err)
+			slog.Error("http server faild", "err", err)
+			os.Exit(0)
 		}
 	}()
 
@@ -59,6 +59,6 @@ func main() {
 	defer cancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Printf("Graceful shutdown failed: %v", err)
+		slog.Error("graceful shutdown failed", "err", err)
 	}
 }

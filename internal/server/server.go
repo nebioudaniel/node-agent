@@ -2,7 +2,7 @@ package server
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 
 	"node-agent/internal/specs"
@@ -21,7 +21,7 @@ func NewHandler(collect func() (specs.Specs, error)) http.Handler {
 	mux.HandleFunc("/specs", func(w http.ResponseWriter, r *http.Request) {
 		s, err := collect()
 		if err != nil {
-			log.Printf("collect specs: %v", err)
+			slog.Error("collect specs faild", "err", err)
 
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
@@ -34,7 +34,7 @@ func NewHandler(collect func() (specs.Specs, error)) http.Handler {
 
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(s); err != nil {
-			log.Printf("encode specs response: %v", err)
+			slog.Error("encode specs repsonse failed", "err", err)
 		}
 	})
 
