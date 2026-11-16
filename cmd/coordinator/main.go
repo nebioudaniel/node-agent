@@ -11,15 +11,20 @@ import (
 	"time"
 
 	"node-agent/internal/coordinator"
+	"node-agent/internal/coordinator/registry"
 )
 
 func main() {
 	addr := flag.String("addr", ":9090", "address to listen on")
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	slog.SetDefault(logger)
+
+	reg := registry.New(time.Now)
 
 	srv := &http.Server{
 		Addr:    *addr,
-		Handler: coordinator.NewHandler(),
+		Handler: coordinator.NewHandler(reg, logger),
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
