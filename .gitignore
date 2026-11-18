@@ -3,3 +3,4 @@
 bin/
 /cmd/agent/agent
 /cmd/coordinator/coordinator
+.DS_Store
