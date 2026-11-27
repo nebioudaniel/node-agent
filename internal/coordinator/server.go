@@ -195,7 +195,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		req.Specs.Hostname,
 		req.Specs.OS,
 		req.Specs.Arch,
-		0,                  // cpuModel: specs.Specs.CPU is a string; Worker.CPUModel is int
+		req.Specs.CPU,      // cpuModel
 		req.Specs.Cores,    // cpuCores
 		req.Specs.TotalRAM,
 		secretHash,

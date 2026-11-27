@@ -284,7 +284,7 @@ func TestRequireWorkerStatusContract(t *testing.T) {
 	s := &Server{reg: reg, log: slog.Default()}
 
 	// Register a known worker with a known secret.
-	reg.Register("wrk_test", "host-a", "darwin", "amd64", 0, 4, 8_000_000_000, hexHash("s3cret"))
+	reg.Register("wrk_test", "host-a", "darwin", "amd64", "", 4, 8_000_000_000, hexHash("s3cret"))
 
 	// Build a handler that just records it was called.
 	var called bool
@@ -353,7 +353,7 @@ func TestRequireWorkerChecks404Before401(t *testing.T) {
 
 func TestHandleHeartbeatFullFlow(t *testing.T) {
 	reg := registry.New(nil)
-	reg.Register("wrk_test", "host-a", "darwin", "amd64", 0, 4, 8_000_000_000, hexHash("s3cret"))
+	reg.Register("wrk_test", "host-a", "darwin", "amd64", "", 4, 8_000_000_000, hexHash("s3cret"))
 
 	h := NewHandler(reg) // full mux with requireWorker + routes
 
@@ -409,7 +409,7 @@ func TestHandleHeartbeatFullFlow(t *testing.T) {
 func TestHandleListWorkersSecurity(t *testing.T) {
 	reg := registry.New(nil)
 	s := &Server{reg: reg, log: slog.Default()}
-	reg.Register("wrk_test", "host-a", "darwin", "amd64", 0, 4, 8_000_000_000, hexHash("s3cret"))
+	reg.Register("wrk_test", "host-a", "darwin", "amd64", "", 4, 8_000_000_000, hexHash("s3cret"))
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/workers", s.handleListWorkers)
@@ -475,7 +475,7 @@ func TestWorkerStatusWithFakeClock(t *testing.T) {
 	}
 
 	reg := registry.New(now)
-	reg.Register("wrk_test", "host-a", "darwin", "amd64", 0, 4, 8_000_000_000, hexHash("s3cret"))
+	reg.Register("wrk_test", "host-a", "darwin", "amd64", "", 4, 8_000_000_000, hexHash("s3cret"))
 
 	h := NewHandler(reg)
 
@@ -518,5 +518,44 @@ func TestWorkerStatusWithFakeClock(t *testing.T) {
 	advance(30 * time.Second)
 	if got := getStatus(); got != "offline" {
 		t.Errorf("at 50s: status = %q, want %q", got, "offline")
+	}
+}
+
+// Pre-work (Step 1.5): cpu_model must be a STRING, not 0.
+func TestCPUModelIsString(t *testing.T) {
+	reg := registry.New(nil)
+	h := NewHandler(reg)
+
+	// Register with real specs, CPU model "Test CPU".
+	specsJSON := `{"hostname":"test-machine","os":"darwin","arch":"amd64","cpu":"Test CPU","cores":4,"total_ram":8000000000}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/workers/register", strings.NewReader(`{"join_token":"dev","specs":`+specsJSON+`}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("register status = %d, want 201", rec.Code)
+	}
+
+	// GET /v1/workers must contain "cpu_model":"Test CPU" (string), not 0.
+	listReq := httptest.NewRequest(http.MethodGet, "/v1/workers", nil)
+	listRec := httptest.NewRecorder()
+	h.ServeHTTP(listRec, listReq)
+	body := listRec.Body.String()
+	if !strings.Contains(body, `"cpu_model":"Test CPU"`) {
+		t.Errorf("GET /v1/workers missing string cpu_model \"Test CPU\": %s", body)
+	}
+	if strings.Contains(body, `"cpu_model":0`) {
+		t.Errorf("cpu_model is numeric 0, want string \"Test CPU\": %s", body)
+	}
+	// Ensure JSON type is string, not number.
+	var workers []map[string]any
+	if err := json.Unmarshal([]byte(body), &workers); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	if len(workers) != 1 {
+		t.Fatalf("got %d workers, want 1", len(workers))
+	}
+	if _, ok := workers[0]["cpu_model"].(string); !ok {
+		t.Errorf("cpu_model is %T (%v), want string", workers[0]["cpu_model"], workers[0]["cpu_model"])
 	}
 }

@@ -22,7 +22,7 @@ type Worker struct {
 	Hostname      string            `json:"hostname"`
 	OS            string            `json:"os"`
 	Arch          string            `json:"arch"`
-	CPUModel      int               `json:"cpu_model"`
+	CPUModel      string            `json:"cpu_model"`
 	CPUCores      int               `json:"cpu_cores"`
 	RAMTotalBytes uint64            `json:"ram_total_bytes"`
 	Labels        map[string]string `json:"labels"`
@@ -41,7 +41,7 @@ type View struct {
 	Hostname      string            `json:"hostname"`
 	OS            string            `json:"os"`
 	Arch          string            `json:"arch"`
-	CPUModel      int               `json:"cpu_model"`
+	CPUModel      string            `json:"cpu_model"`
 	CPUCores      int               `json:"cpu_cores"`
 	RAMTotalBytes uint64            `json:"ram_total_bytes"`
 	Labels        map[string]string `json:"labels"`
@@ -152,7 +152,7 @@ func (r *Registry) List() []*View {
 // the SHA-256 hash of the secret; the plain secret is returned once by the
 // handler and never persisted. Status is computed on read via StatusFor.
 // Caller must not hold the lock; Register acquires it internally.
-func (r *Registry) Register(id, hostname, os, arch string, cpuModel int, cpuCores int, ramTotalBytes uint64, secretHash [32]byte) {
+func (r *Registry) Register(id, hostname, os, arch string, cpuModel string, cpuCores int, ramTotalBytes uint64, secretHash [32]byte) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
