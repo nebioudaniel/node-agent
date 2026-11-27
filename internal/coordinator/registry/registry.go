@@ -144,6 +144,27 @@ func (r *Registry) List() []*View {
 	return views
 }
 
+// Register creates a new worker record from registration data. It stores only
+// the SHA-256 hash of the secret; the plain secret is returned once by the
+// handler and never persisted. Status is computed on read via StatusFor.
+// Caller must not hold the lock; Register acquires it internally.
+func (r *Registry) Register(id, hostname, os, arch string, cpuModel int, ramTotalBytes uint64, secretHash [32]byte) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.workers[id] = &Worker{
+		ID:            id,
+		Hostname:      hostname,
+		OS:            os,
+		Arch:          arch,
+		CPUModel:      cpuModel,
+		RAMTotalBytes: ramTotalBytes,
+		SecretHash:    secretHash,
+		LastSeen:      r.now(),
+		Status:        StatusFor(r.now(), r.now()),
+	}
+}
+
 // toView builds a View from a Worker, copying maps and slices so the caller
 // cannot mutate internal state. It does not include SecretHash. Status is
 // computed from LastSeen using the injected clock. Caller must hold the

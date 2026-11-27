@@ -7,6 +7,7 @@ This directory contains educational explanations for each implementation task in
 | Task ID | Name | Project step | Document |
 |---|---|---|---|
 | `task-001` | In-Memory Worker Registry | Step 1.2 | [task-001-in-memory-registry.md](./task-001-in-memory-registry.md) |
+| `task-002` | Register Endpoint | Step 1.3 | [task-002-register-endpoint.md](./task-002-register-endpoint.md) |
 
 ## Conventions
 

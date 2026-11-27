@@ -9,10 +9,10 @@ import (
 
 type RegisterRequest struct {
 	JoinToken string      `json:"join_token"`
-	Specs     specs.Specs `joson:"specs"`
+	Specs     specs.Specs `json:"specs"`
 }
 type RegisterResponse struct {
-	WorkerID         string `josn:"worker_id"`
+	WorkerID         string `json:"worker_id"`
 	Secret           string `json:"secret"`
 	HeartbeatSeconds int    `json:"heartbeat_seconds"`
 }

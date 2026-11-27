@@ -258,6 +258,48 @@ func TestListEmpty(t *testing.T) {
 	}
 }
 
+func TestRegister(t *testing.T) {
+	clock := newFakeClock(time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC))
+	reg := New(clock.Now)
+
+	secretHash := HashSecret("test-secret")
+	reg.Register("wrk-reg-1", "host-a", "darwin", "amd64", 0, 16<<30, secretHash)
+
+	v, err := reg.Get("wrk-reg-1")
+	if err != nil {
+		t.Fatalf("Get() error = %v, want nil", err)
+	}
+	if v.ID != "wrk-reg-1" {
+		t.Errorf("Get().ID = %q, want %q", v.ID, "wrk-reg-1")
+	}
+	if v.Hostname != "host-a" {
+		t.Errorf("Get().Hostname = %q, want %q", v.Hostname, "host-a")
+	}
+	if v.OS != "darwin" {
+		t.Errorf("Get().OS = %q, want %q", v.OS, "darwin")
+	}
+	if v.Arch != "amd64" {
+		t.Errorf("Get().Arch = %q, want %q", v.Arch, "amd64")
+	}
+	if v.RAMTotalBytes != 16<<30 {
+		t.Errorf("Get().RAMTotalBytes = %d, want %d", v.RAMTotalBytes, 16<<30)
+	}
+	if v.Status != "online" {
+		t.Errorf("Get().Status = %q, want %q", v.Status, "online")
+	}
+	if !reg.CheckSecret("wrk-reg-1", "test-secret") {
+		t.Error("CheckSecret() = false, want true for correct secret")
+	}
+	if reg.CheckSecret("wrk-reg-1", "wrong-secret") {
+		t.Error("CheckSecret() = true, want false for wrong secret")
+	}
+
+	// LastSeen uses the injected clock.
+	if !v.LastSeen.Equal(clock.Now()) {
+		t.Errorf("LastSeen = %v, want %v", v.LastSeen, clock.Now())
+	}
+}
+
 func TestRegistryConcurrentAccess(t *testing.T) {
 	clock := newFakeClock(time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC))
 	reg := New(clock.Now)
