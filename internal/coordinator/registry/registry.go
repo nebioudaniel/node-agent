@@ -56,7 +56,7 @@ type Registry struct {
 	mu      sync.RWMutex
 	workers map[string]*Worker
 	now     func() time.Time
-	// reported is a placeholder for the Sweep step (Step 1.5).
+	// reported maps worker id -> last status reported by Sweep.
 	reported map[string]string
 }
 
@@ -94,6 +94,7 @@ func (r *Registry) RecordHeartbeat(id string, hb api.Heartbeat) {
 	if !ok {
 		w = &Worker{ID: id}
 		r.workers[id] = w
+		r.reported[id] = "pending" // last REPORTED starts at pending
 	}
 
 	w.RAMTotalBytes = hb.RAMTotalBytes
@@ -165,9 +166,10 @@ func (r *Registry) Register(id, hostname, os, arch string, cpuModel string, cpuC
 		CPUCores:      cpuCores,
 		RAMTotalBytes: ramTotalBytes,
 		SecretHash:    secretHash,
-		LastSeen:      r.now(),
-		Status:        StatusFor(r.now(), r.now()),
+		LastSeen:      time.Time{}, // zero: no heartbeat yet -> "pending"
+		Status:        "pending",
 	}
+	r.reported[id] = "pending" // last REPORTED starts at pending
 }
 
 // toView builds a View from a Worker, copying maps and slices so the caller

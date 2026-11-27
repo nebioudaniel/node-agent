@@ -284,8 +284,8 @@ func TestRegister(t *testing.T) {
 	if v.RAMTotalBytes != 16<<30 {
 		t.Errorf("Get().RAMTotalBytes = %d, want %d", v.RAMTotalBytes, 16<<30)
 	}
-	if v.Status != "online" {
-		t.Errorf("Get().Status = %q, want %q", v.Status, "online")
+	if v.Status != "pending" {
+		t.Errorf("Get().Status = %q, want %q", v.Status, "pending")
 	}
 	if !reg.CheckSecret("wrk-reg-1", "test-secret") {
 		t.Error("CheckSecret() = false, want true for correct secret")
@@ -294,9 +294,10 @@ func TestRegister(t *testing.T) {
 		t.Error("CheckSecret() = true, want false for wrong secret")
 	}
 
-	// LastSeen uses the injected clock.
-	if !v.LastSeen.Equal(clock.Now()) {
-		t.Errorf("LastSeen = %v, want %v", v.LastSeen, clock.Now())
+	// A freshly registered worker has no heartbeat yet -> zero LastSeen,
+	// which StatusFor reports as "pending".
+	if !v.LastSeen.IsZero() {
+		t.Errorf("LastSeen = %v, want zero time (no heartbeat yet)", v.LastSeen)
 	}
 }
 

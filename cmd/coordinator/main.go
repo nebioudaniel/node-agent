@@ -30,6 +30,11 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
+	// Sweeper logs worker status transitions (online->stale->offline, etc.)
+	// every 5s. It does not set status; status is computed on read. Clean
+	// shutdown: sweeper returns when ctx is cancelled.
+	go registry.RunSweeper(ctx, reg, 5*time.Second, slog.Default())
+
 	go func() {
 		slog.Info("coordinator listening", "addr", *addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
