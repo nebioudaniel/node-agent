@@ -1201,13 +1201,13 @@ Therefore, use this order:
 
 ### Stage A --- Prepare your environment
 
--   [ ] Inspect `git status`, current branch, and recent commits.
--   [ ] Inspect and safely handle `.DS_Store`.
--   [ ] Confirm Docker is installed and running.
--   [ ] Learn the Docker commands in Part IV.
--   [ ] Start a local PostgreSQL container.
--   [ ] Complete the SQL exercises.
--   [ ] Save your notes.
+-   [x] Inspect `git status`, current branch, and recent commits.
+-   [x] Inspect and safely handle `.DS_Store`.
+-   [x] Confirm Docker is installed and running.
+-   [x] Learn the Docker commands in Part IV.
+-   [x] Start a local PostgreSQL container.
+-   [x] Complete the SQL exercises.
+-   [x] Save your notes.
 
 ### Stage B --- Finish prerequisites in the main build guide
 
@@ -1543,3 +1543,381 @@ What confused me:
 We will review your work, fix issues, and unlock the next task. The goal
 is not just to make the platform work; it is to understand the
 engineering decisions well enough to build and maintain it yourself.
+
+# After Session 1 — Continue the Roadmap
+
+## Session 2 — Docker Fundamentals & PostgreSQL
+
+**Goal:** Understand how Docker runs PostgreSQL, how containers work, and how data persists.
+
+### Task 3 — Understand Docker
+
+Before writing commands, understand:
+
+- [ ] What is a container?
+- [ ] What is an image?
+- [ ] Why PostgreSQL runs inside a container?
+- [ ] What is port mapping?
+- [ ] What is a volume?
+- [ ] What happens when a container is deleted?
+- [ ] Why do we need persistent storage?
+
+### Practice
+
+- [ ] Inspect the PostgreSQL container
+- [ ] View its logs
+- [ ] Stop it
+- [ ] Start it again
+- [ ] Connect to it again
+- [ ] Understand the difference between stopping and deleting
+- [ ] Understand where database data lives
+
+---
+
+## Session 3 — SQL & Database Design
+
+**Goal:** Learn the SQL and database concepts we need for Team Compute Platform.
+
+### Task 4 — SQL Fundamentals
+
+Practice:
+
+- [ ] `CREATE TABLE`
+- [ ] Data types
+- [ ] `PRIMARY KEY`
+- [ ] `NOT NULL`
+- [ ] `UNIQUE`
+- [ ] `DEFAULT`
+- [ ] `INSERT`
+- [ ] `SELECT`
+- [ ] `WHERE`
+- [ ] `UPDATE`
+- [ ] `DELETE`
+
+### Task 5 — Database Relationships
+
+Understand:
+
+- [ ] Primary keys
+- [ ] Foreign keys
+- [ ] One-to-one relationships
+- [ ] One-to-many relationships
+- [ ] Many-to-many relationships
+- [ ] Why relational databases enforce constraints
+
+### Practice
+
+Design a simple database for workers.
+
+```text
+Worker:
+- ID
+- Hostname
+- Operating system
+- CPU
+- CPU cores
+- RAM
+- Last seen
+- Status
+```
+
+Try creating this table yourself before implementing it in the project.
+
+---
+
+## Session 4 — PostgreSQL for Our Project
+
+**Goal:** Understand the database structure we need before implementing persistence.
+
+### Task 6 — Design the Workers Table
+
+- [ ] Decide what columns we need
+- [ ] Choose appropriate PostgreSQL data types
+- [ ] Understand why RAM should use `BIGINT`
+- [ ] Understand timestamps
+- [ ] Understand JSONB
+- [ ] Understand constraints
+- [ ] Write the SQL schema
+- [ ] Test the schema manually
+
+### Task 7 — Design Join Tokens
+
+Understand why agents need secure registration.
+
+- [ ] Why do agents need authentication?
+- [ ] What is a join token?
+- [ ] Why shouldn't we store raw tokens?
+- [ ] What is token expiration?
+- [ ] What does `max_uses` mean?
+- [ ] Why must token consumption be atomic?
+
+Design the table:
+
+```text
+JoinToken:
+- Token hash
+- Expiration
+- Maximum uses
+- Used count
+- Labels
+```
+
+---
+
+## Session 5 — Database Migrations
+
+**Goal:** Learn how we manage database schema changes safely.
+
+### Task 8 — Migration Fundamentals
+
+Understand:
+
+- [ ] What is a migration?
+- [ ] Why shouldn't we manually change production databases?
+- [ ] What is migration versioning?
+- [ ] Why migrations are committed to Git?
+- [ ] What happens when a migration fails?
+
+### Practice
+
+- [ ] Install Goose
+- [ ] Create your first migration
+- [ ] Write the workers table schema
+- [ ] Run the migration
+- [ ] Inspect the database
+- [ ] Understand the migration history
+- [ ] Practice rolling back if appropriate
+
+---
+
+## Session 6 — Go & PostgreSQL
+
+**Goal:** Connect our Go application to PostgreSQL.
+
+### Task 9 — Database Connection
+
+Understand:
+
+- [ ] What is a database connection?
+- [ ] What is a connection pool?
+- [ ] Why do we use `pgxpool`?
+- [ ] What is a context?
+- [ ] Why should database operations have timeouts?
+- [ ] Why should we use parameterized queries?
+
+### Implementation
+
+Create a database connection package.
+
+Requirements:
+
+- [ ] Load the database URL from environment variables
+- [ ] Connect using `pgxpool`
+- [ ] Check database connectivity
+- [ ] Handle connection errors
+- [ ] Close the pool gracefully
+- [ ] Test the connection
+
+---
+
+## Session 7 — Store Interface & Architecture
+
+**Goal:** Understand how PostgreSQL fits into our existing architecture.
+
+### Task 10 — Store Interface
+
+Before writing implementation, understand:
+
+```text
+Coordinator
+    |
+    v
+Registry
+    |
+    v
+Store Interface
+    |
+    v
+PostgreSQL Implementation
+```
+
+Questions:
+
+- Why should the registry not directly depend on PostgreSQL?
+- What is an interface?
+- What does dependency injection mean?
+- Why are we separating storage from business logic?
+- How will testing become easier?
+
+### Implementation
+
+- [ ] Inspect current Registry
+- [ ] Inspect Worker struct
+- [ ] Identify what information needs persistence
+- [ ] Design the Store interface
+- [ ] Review the interface before implementing it
+- [ ] Implement PostgreSQL Store
+
+---
+
+## Session 8 — Worker Persistence
+
+**Goal:** Persist worker information across coordinator restarts.
+
+### Task 11 — Save Workers
+
+- [ ] Implement `SaveWorker`
+- [ ] Use parameterized SQL
+- [ ] Handle errors properly
+- [ ] Understand UPSERT
+- [ ] Test worker creation
+- [ ] Test worker updates
+
+### Task 12 — Load Workers
+
+- [ ] Implement `LoadWorkers`
+- [ ] Load workers when coordinator starts
+- [ ] Understand why previously online workers should not automatically be considered online
+- [ ] Restore them as offline until they heartbeat
+- [ ] Test startup behavior
+
+---
+
+## Session 9 — Heartbeat Persistence
+
+**Goal:** Persist last-seen timestamps efficiently.
+
+### Task 13 — LastSeen
+
+Understand:
+
+- Why heartbeats happen frequently
+- Why we don't necessarily write every heartbeat to PostgreSQL
+- What write-behind means
+- What batching means
+- What data loss window means
+
+Implement:
+
+- [ ] Collect LastSeen updates
+- [ ] Batch updates
+- [ ] Flush periodically
+- [ ] Flush on graceful shutdown
+- [ ] Handle database errors
+- [ ] Test race conditions
+
+---
+
+## Session 10 — Secure Token Storage
+
+**Goal:** Implement secure worker registration.
+
+### Task 14 — Token Creation
+
+- [ ] Generate a secure random token
+- [ ] Hash the token
+- [ ] Store only the hash
+- [ ] Set expiration
+- [ ] Set usage limit
+- [ ] Store labels
+
+### Task 15 — Atomic Token Consumption
+
+Understand:
+
+- What is a race condition?
+- What is atomicity?
+- Why can two workers accidentally consume the same token?
+- Why is a single conditional SQL statement safer?
+
+Implement:
+
+- [ ] Consume token atomically
+- [ ] Reject expired tokens
+- [ ] Reject exhausted tokens
+- [ ] Return labels
+- [ ] Test concurrent requests
+
+---
+
+## Session 11 — Docker Compose
+
+**Goal:** Run the development infrastructure consistently.
+
+### Task 16 — Docker Compose
+
+Understand:
+
+- What is Compose?
+- Why multiple services can share a network?
+- What is service discovery?
+- Why does a Go application inside Docker use `db` instead of `localhost`?
+- What are environment variables?
+- What are health checks?
+
+Implement:
+
+- [ ] Create `compose.yaml`
+- [ ] Configure PostgreSQL
+- [ ] Add persistent volume
+- [ ] Configure health check
+- [ ] Configure environment variables
+- [ ] Start the database with Compose
+- [ ] Connect the Go coordinator
+
+---
+
+## Session 12 — Testing & Final Integration
+
+**Goal:** Make sure the persistence system works correctly.
+
+### Task 17 — Database Testing
+
+- [ ] Test database connection
+- [ ] Test migrations
+- [ ] Test saving workers
+- [ ] Test loading workers
+- [ ] Test updating LastSeen
+- [ ] Test token creation
+- [ ] Test token consumption
+- [ ] Test concurrent token consumption
+- [ ] Test coordinator restart
+- [ ] Run `go test ./...`
+- [ ] Run `go test -race ./...`
+
+---
+
+# Final Definition of Done
+
+The database and Docker integration is complete when:
+
+- [ ] PostgreSQL runs through Docker
+- [ ] Database data persists using a volume
+- [ ] Migrations work
+- [ ] Coordinator connects to PostgreSQL
+- [ ] Workers persist
+- [ ] Workers load after coordinator restart
+- [ ] LastSeen is persisted
+- [ ] Join tokens are stored securely
+- [ ] Tokens are consumed atomically
+- [ ] Tests pass
+- [ ] Docker Compose runs the local infrastructure
+- [ ] I understand the architecture and can explain the decisions
+
+---
+
+# My Learning Rule
+
+For every task:
+
+1. Understand the problem.
+2. Learn the concepts needed.
+3. Explore the existing code.
+4. Design the solution together.
+5. Implement one small step.
+6. Explain the code.
+7. Test it.
+8. Review mistakes.
+9. Commit the work.
+
+**Don't rush to finish the code. Build the understanding that allows you to build the next system without following a guide.**
