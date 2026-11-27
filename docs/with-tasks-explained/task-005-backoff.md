@@ -2,7 +2,7 @@
 
 ## 1. Task overview
 
-**Task name and ID:** task-005-backoff (project Step 1.7) — **STATUS: INCOMPLETE / scaffolding only**
+**Task name and ID:** task-005-backoff (project Step 1.7)
 
 **Problem being solved:** A retrying agent needs to wait before retrying; naive immediate/constant retries create retry storms, and `20 agents` retrying in the same second overload a recovering coordinator. We need `func Backoff(attempt int, base, max time.Duration, rnd func() float64) time.Duration` implementing exponential backoff + jitter, with no overflow and no panic.
 
@@ -12,7 +12,7 @@
 
 **Previous task/dependency:** Step 1.6 identity (**not present in this checkout**) / Step 1.5 registry; independent pure function. **Note honestly: Step 1.6 is NOT implemented here.**
 
-**COACH MODE honesty:** I (agent) created `backoff.go` (signature + `// TODO`) + `backoff_test.go`. **You implement `Backoff`.** Therefore this task is documented as **incomplete**; `go test ./internal/agent` currently **FAILS**. With-tasks-explained normally says doc after tests pass; this doc records real state + full learning.
+**Coach→override honesty:** initially scaffolding; per your "finish everything", `Backoff` is now **implemented**. `go vet ./...` clean; `go test -race ./internal/agent -v` all 4 PASS; `go test -race ./...` all packages PASS. **Step 1.6 identity + Step 1.8 remain unimplemented (not invented); Step 1.7 not merged.**
 
 ---
 
@@ -36,7 +36,7 @@ flowchart TD
 
 | File | Responsibility | What changed |
 |---|---|---|
-| `internal/agent/backoff.go` | `agent.Backoff` | **Created** `internal/agent` package; signature + doc + `// TODO`; **body NOT implemented** (coach mode). |
+| `internal/agent/backoff.go` | `agent.Backoff` | **Created** `internal/agent` package; implemented per spec. |
 | `internal/agent/backoff_test.go` | `agent` tests | **Created**; verified math table; currently **failing** until `Backoff` implemented. |
 | `docs/with-tasks-explained/task-005-backoff.md` | This doc | Created. |
 | `docs/with-tasks-explained/README.md` | Index | task-005. |
@@ -50,7 +50,7 @@ flowchart TD
 - **Purpose:** return wait before retry `attempt` (0-based).
 - **Inputs:** `attempt` int; `base`,`max` `time.Duration`; `rnd func() float64` returning `[0,1)`.
 - **Outputs:** `time.Duration` in `[0,max)`, never negative, never exceeds `max`, never panics.
-- **Step-by-step (to implement):**
+- **Step-by-step (implemented):**
   1. `if attempt < 0 { attempt = 0 }`
   2. `if attempt > 30 { attempt = 30 }`
   3. `d := base * time.Duration(1<<attempt)` (or `base << attempt`); `if d > max { d = max }`; `if d < 0 { d = max }`
@@ -110,13 +110,13 @@ No formal scheduling scoring; arithmetic + clamps. **bit shift overflow explaine
 - `TestBackoffNeverExceedsMaxNeverNegative`: attempts0–100×rnd∈{0,.25,.5,.75,.999999}→`0≤got≤max`
 - `TestBackoffNegativeAttempt`: `attempt=-1`→no `recover` panic, `≥0`,`≤max`
 
-**ACTUAL current:** `go vet ./internal/agent` clean; `go test -race ./internal/agent -v` **FAIL** (`got 0s, want ...`; bound tests trivially pass only because `got==0`). Commands: `gofmt`, `go vet`, `go test -race`. **No claim tests pass.** After your `Backoff`: re-run `go test -race ./internal/agent` + `go test -race ./...` + `go vet ./...`. Not yet run green. **Not run real randomness; rnd injected.**
+**ACTUAL current:** `go vet ./...` clean; `go test -race ./internal/agent -v` → `TestBackoffJitterRange`, `TestBackoffGrowthTable`, `TestBackoffNeverExceedsMaxNeverNegative`, `TestBackoffNegativeAttempt` all PASS; `go test -race ./...` all packages PASS. Commands run: `gofmt`, `go vet ./...`, `go test -race`. **rnd injected (0,0.25,0.5,0.75,0.999999); no real randomness; no sleeping.**
 
 ---
 
 ## 9. Execution walkthrough
 
-`Backoff(0,1s,30s,rnd0)`→d=1s→**500ms**; `rnd.999999`→~1s(<1s); `attempt=1`→d=2s→**1s**; `attempt=5`→d=32→cap30→**15s**; `attempt=100`→clamp30→d=1s·2^30→cap30→**~15s**(`rnd`-scaled `[15s,30s)`→≤30); `attempt=-1`→clamp0→d=1s→[0.5s,1s); never neg/panic. Caller `attempt++`→`Backoff(...,rand.Float64)`→`select{ctx.Done→return; timer.C→retry}`. **STOPPED (coach); not implemented.**
+`Backoff(0,1s,30s,rnd0)`→d=1s→**500ms**; `rnd.999999`→~1s(<1s); `attempt=1`→d=2s→**1s**; `attempt=5`→d=32→cap30→**15s**; `attempt=100`→clamp30→d=1s·2^30→cap30→**~15s**(`rnd`-scaled `[15s,30s)`→≤30); `attempt=-1`→clamp0→d=1s→[0.5s,1s); never neg/panic. Caller `attempt++`→`Backoff(...,rand.Float64)`→`select{ctx.Done→return; timer.C→retry}`. **implemented; green.**
 
 ---
 
@@ -126,7 +126,7 @@ No formal scheduling scoring; arithmetic + clamps. **bit shift overflow explaine
 - `rnd()=0→d/2`, `rnd→1→d`, result `[d/2,d)`, `≤max`, `≥0`.
 - **`time.Duration` int64**; **clamp attempt + cap d**; **negative shift panic**; overflow→negative.
 - injected `rnd` → pure/testable. **Don't sleep in pure fn**; caller cancellable `select`. 
-- honest incomplete: `TODO`, red tests, not claim done.
+- verify with real `go test -race`; honest about not claiming done until run.
 
 ---
 
@@ -147,8 +147,8 @@ No formal scheduling scoring; arithmetic + clamps. **bit shift overflow explaine
 
 ## 12. Future considerations
 
-**Necessary now:** user implements `Backoff`; green tests. **Later:** `time.AfterFunc` vs timer; `rand` `*rand.Rand` mutex; configurable `base`/`max`; `Backoff` reuse Step1.8. **Unnecessary:** full-random-only; sleeping inside `Backoff`; observer; >30 clamp need.
+**Necessary now:** none for 1.7. **Later:** `time.AfterFunc` vs timer; `rand` `*rand.Rand` mutex; configurable `base`/`max`; `Backoff` reuse Step1.8. **Unnecessary:** full-random-only; sleeping inside `Backoff`; observer; >30 clamp need.
 
 ---
 
-**Status:** INCOMPLETE. Step 1.7 scaffolding; `Backoff` TODO; tests red; not Step 1.8. Honestly recorded.
+**Status:** COMPLETE. `Backoff` implemented per spec; `go vet` clean; `go test -race ./internal/agent` + `go test -race ./...` green. Step 1.6/1.8 not done; not merged.
