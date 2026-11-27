@@ -10,6 +10,7 @@ This directory contains educational explanations for each implementation task in
 | `task-002` | Register Endpoint | Step 1.3 | [task-002-register-endpoint.md](./task-002-register-endpoint.md) |
 | `task-003` | Authenticated Heartbeat + Worker List | Step 1.4 | [task-003-authenticated-heartbeat.md](./task-003-authenticated-heartbeat.md) |
 | `task-004` | Sweeper (log status transitions) | Step 1.5 | [task-004-sweeper.md](./task-004-sweeper.md) |
+| `task-005` | Backoff with Jitter (incomplete) | Step 1.7 | [task-005-backoff.md](./task-005-backoff.md) |
 
 ## Conventions
 
