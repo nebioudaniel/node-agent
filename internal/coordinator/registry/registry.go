@@ -19,10 +19,11 @@ var ErrUnknownWorker = errors.New("unknown worker")
 // secret) and the full last heartbeat.
 type Worker struct {
 	ID            string            `json:"id"`
-	Hostname      string            `json:"host_name"`
+	Hostname      string            `json:"hostname"`
 	OS            string            `json:"os"`
 	Arch          string            `json:"arch"`
 	CPUModel      int               `json:"cpu_model"`
+	CPUCores      int               `json:"cpu_cores"`
 	RAMTotalBytes uint64            `json:"ram_total_bytes"`
 	Labels        map[string]string `json:"labels"`
 	SecretHash    [32]byte          `json:"secret_hash"`
@@ -37,10 +38,11 @@ type Worker struct {
 // the secret hash.
 type View struct {
 	ID            string            `json:"id"`
-	Hostname      string            `json:"host_name"`
+	Hostname      string            `json:"hostname"`
 	OS            string            `json:"os"`
 	Arch          string            `json:"arch"`
 	CPUModel      int               `json:"cpu_model"`
+	CPUCores      int               `json:"cpu_cores"`
 	RAMTotalBytes uint64            `json:"ram_total_bytes"`
 	Labels        map[string]string `json:"labels"`
 	LastSeen      time.Time         `json:"last_seen"`
@@ -78,24 +80,26 @@ func HashSecret(secret string) [32]byte {
 	return sha256.Sum256([]byte(secret))
 }
 
-// RecordHeartbeat upserts a worker from a validated heartbeat. LastSeen is
-// stamped with the coordinator's receive time (now()), never hb.SentAt, so
-// agent clock skew cannot affect liveness. Fields not present in the
-// heartbeat (Hostname, OS, Arch, CPUModel, Labels) remain zero-valued until
-// the register endpoint (Step 1.3) populates them.
+// RecordHeartbeat updates a worker's liveness from a validated heartbeat.
+// LastSeen is stamped with the coordinator's receive time (now()), never
+// hb.SentAt, so agent clock skew cannot affect liveness. It UPDATES the
+// existing worker in place, preserving registration fields (Hostname, OS,
+// Arch, CPUModel, Labels) and SecretHash — it does not reset the secret or
+// erase registration data. If the worker doesn't exist, it is created.
 func (r *Registry) RecordHeartbeat(id string, hb api.Heartbeat) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	w := &Worker{
-		ID:            id,
-		RAMTotalBytes: hb.RAMTotalBytes,
-		SecretHash:    [32]byte{}, // no secret yet; populated at registration
-		LastSeen:      r.now(),
-		Last:          hb,
-		Status:        StatusFor(r.now(), r.now()),
+	w, ok := r.workers[id]
+	if !ok {
+		w = &Worker{ID: id}
+		r.workers[id] = w
 	}
-	r.workers[id] = w
+
+	w.RAMTotalBytes = hb.RAMTotalBytes
+	w.LastSeen = r.now()
+	w.Last = hb
+	w.Status = StatusFor(r.now(), r.now())
 }
 
 // CheckSecret returns true if id exists and the sha256 of secret matches the
@@ -148,7 +152,7 @@ func (r *Registry) List() []*View {
 // the SHA-256 hash of the secret; the plain secret is returned once by the
 // handler and never persisted. Status is computed on read via StatusFor.
 // Caller must not hold the lock; Register acquires it internally.
-func (r *Registry) Register(id, hostname, os, arch string, cpuModel int, ramTotalBytes uint64, secretHash [32]byte) {
+func (r *Registry) Register(id, hostname, os, arch string, cpuModel int, cpuCores int, ramTotalBytes uint64, secretHash [32]byte) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -158,6 +162,7 @@ func (r *Registry) Register(id, hostname, os, arch string, cpuModel int, ramTota
 		OS:            os,
 		Arch:          arch,
 		CPUModel:      cpuModel,
+		CPUCores:      cpuCores,
 		RAMTotalBytes: ramTotalBytes,
 		SecretHash:    secretHash,
 		LastSeen:      r.now(),
@@ -177,16 +182,20 @@ func (r *Registry) toView(w *Worker) *View {
 	loaded := make([]string, len(w.Last.LoadedModels))
 	copy(loaded, w.Last.LoadedModels)
 
+	last := w.Last
+	last.LoadedModels = loaded
+
 	return &View{
 		ID:            w.ID,
 		Hostname:      w.Hostname,
 		OS:            w.OS,
 		Arch:          w.Arch,
 		CPUModel:      w.CPUModel,
+		CPUCores:      w.CPUCores,
 		RAMTotalBytes: w.RAMTotalBytes,
 		Labels:        labels,
 		LastSeen:      w.LastSeen,
-		Last:          w.Last,
+		Last:          last,
 		Status:        StatusFor(w.LastSeen, r.now()),
 	}
 }

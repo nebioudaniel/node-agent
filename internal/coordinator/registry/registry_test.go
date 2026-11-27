@@ -263,7 +263,7 @@ func TestRegister(t *testing.T) {
 	reg := New(clock.Now)
 
 	secretHash := HashSecret("test-secret")
-	reg.Register("wrk-reg-1", "host-a", "darwin", "amd64", 0, 16<<30, secretHash)
+	reg.Register("wrk-reg-1", "host-a", "darwin", "amd64", 0, 0, 16<<30, secretHash)
 
 	v, err := reg.Get("wrk-reg-1")
 	if err != nil {

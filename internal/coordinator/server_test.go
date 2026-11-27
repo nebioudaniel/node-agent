@@ -8,7 +8,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"node-agent/internal/api"
 	"node-agent/internal/coordinator/registry"
@@ -19,7 +21,12 @@ const validBody = `{"worker_id":"wrk_test","seq":1,"agent_version":"0.1.0","cpu_
 
 func TestHeartbeatHandler(t *testing.T) {
 	reg := registry.New(nil)
-	h := NewHandler(reg)
+	s := &Server{reg: reg, log: slog.Default()}
+	// Test handleHeartbeat body validation through a plain mux (no auth
+	// middleware) so we isolate the decode/validate logic.
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /v1/workers/{id}/heartbeat", s.handleHeartbeat)
+
 	tests := []struct {
 		name       string
 		body       string
@@ -34,13 +41,16 @@ func TestHeartbeatHandler(t *testing.T) {
 			strings.Replace(validBody, `"worker_id":"wrk_test"`, `"worker_id":""`, 1),
 			http.StatusBadRequest, "worker_id"},
 		{"invalid json", `{nope`, http.StatusBadRequest, "invalid JSON"},
+		{"worker_id mismatch",
+			strings.Replace(validBody, `"worker_id":"wrk_test"`, `"worker_id":"wrk_other"`, 1),
+			http.StatusBadRequest, "worker_id"},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/v1/workers/wrk_test/heartbeat", strings.NewReader(tc.body))
 			rec := httptest.NewRecorder()
-			h.ServeHTTP(rec, req)
+			mux.ServeHTTP(rec, req)
 
 			if rec.Code != tc.wantStatus {
 				t.Fatalf("status = %d, want %d (body: %s)", rec.Code, tc.wantStatus, rec.Body.String())
@@ -236,7 +246,277 @@ func TestHandleRegisterBodyTooLarge(t *testing.T) {
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusBadRequest && rec.Code != http.StatusRequestEntityTooLarge {
-		t.Errorf("status = %d, want 400 or 413 for oversized body", rec.Code)
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("status = %d, want 413 for oversized body", rec.Code)
+	}
+}
+
+// TestHandleRegisterBodyTooLargeIntegration verifies that a real http.Server
+// returns 413 for oversized bodies (http.MaxBytesReader behavior). The unit
+// test above uses ServeHTTP directly, which surfaces the read error as 400
+// instead of 413.
+func TestHandleRegisterBodyTooLargeIntegration(t *testing.T) {
+	reg := registry.New(nil)
+	s := &Server{reg: reg, log: slog.Default()}
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /v1/workers/register", s.handleRegister)
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	large := strings.Repeat("a", 1<<20+1) // 1 MB + 1 byte
+	resp, err := srv.Client().Post(srv.URL+"/v1/workers/register", "application/json", strings.NewReader(large))
+	if err != nil {
+		t.Fatalf("post: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Errorf("status = %d, want 413 for oversized body", resp.StatusCode)
+	}
+}
+
+// --- Step 1.4: authenticated heartbeat + worker list ---
+
+func hexHash(s string) [32]byte { return registry.HashSecret(s) }
+
+func TestRequireWorkerStatusContract(t *testing.T) {
+	reg := registry.New(nil)
+	s := &Server{reg: reg, log: slog.Default()}
+
+	// Register a known worker with a known secret.
+	reg.Register("wrk_test", "host-a", "darwin", "amd64", 0, 4, 8_000_000_000, hexHash("s3cret"))
+
+	// Build a handler that just records it was called.
+	var called bool
+	next := func(w http.ResponseWriter, r *http.Request) { called = true; w.WriteHeader(http.StatusOK) }
+
+	tests := []struct {
+		name       string
+		id         string // worker id in path
+		authHeader string // Authorization header value ("" = missing)
+		wantStatus int
+	}{
+		{"unknown worker -> 404", "wrk_unknown", "Bearer s3cret", http.StatusNotFound},
+		{"missing auth header -> 401", "wrk_test", "", http.StatusUnauthorized},
+		{"wrong scheme (Basic) -> 401", "wrk_test", "Basic s3cret", http.StatusUnauthorized},
+		{"wrong secret -> 401", "wrk_test", "Bearer wrong-secret", http.StatusUnauthorized},
+		{"empty bearer token -> 401", "wrk_test", "Bearer ", http.StatusUnauthorized},
+		{"empty bearer token no space -> 401", "wrk_test", "Bearer", http.StatusUnauthorized},
+		{"correct secret -> 200", "wrk_test", "Bearer s3cret", http.StatusOK},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			called = false
+			req := httptest.NewRequest(http.MethodPost, "/v1/workers/"+tc.id+"/heartbeat", nil)
+			if tc.authHeader != "" {
+				req.Header.Set("Authorization", tc.authHeader)
+			}
+			// Set the path value via a real mux so r.PathValue works.
+			mux := http.NewServeMux()
+			mux.HandleFunc("POST /v1/workers/{id}/heartbeat", s.requireWorker(next))
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, req)
+
+			if rec.Code != tc.wantStatus {
+				t.Fatalf("status = %d, want %d (body: %s)", rec.Code, tc.wantStatus, rec.Body.String())
+			}
+			if tc.wantStatus == http.StatusOK && !called {
+				t.Error("next handler was not called on auth success")
+			}
+			if tc.wantStatus != http.StatusOK && called {
+				t.Error("next handler was called despite auth failure")
+			}
+		})
+	}
+}
+
+func TestRequireWorkerChecks404Before401(t *testing.T) {
+	reg := registry.New(nil)
+	s := &Server{reg: reg, log: slog.Default()}
+	// No workers registered.
+
+	next := func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /v1/workers/{id}/heartbeat", s.requireWorker(next))
+
+	// Unknown worker + NO auth header: should be 404, NOT 401.
+	// (Don't reveal whether a worker id exists via auth error.)
+	req := httptest.NewRequest(http.MethodPost, "/v1/workers/wrk_nope/heartbeat", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("unknown worker + no auth = %d, want 404 (checked before 401)", rec.Code)
+	}
+}
+
+func TestHandleHeartbeatFullFlow(t *testing.T) {
+	reg := registry.New(nil)
+	reg.Register("wrk_test", "host-a", "darwin", "amd64", 0, 4, 8_000_000_000, hexHash("s3cret"))
+
+	h := NewHandler(reg) // full mux with requireWorker + routes
+
+	// Valid authenticated heartbeat through the real route.
+	body := `{"worker_id":"wrk_test","seq":1,"agent_version":"0.1.0","cpu_percent":5,"ram_total_bytes":8000000000,"ram_available_bytes":4000000000,"active_tasks":0,"loaded_models":[]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/workers/wrk_test/heartbeat", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer s3cret")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("heartbeat status = %d, want 200 (body: %s)", rec.Code, rec.Body.String())
+	}
+
+	// Response is api.HeartbeatResponse with NextHeartbeatSeconds=5, MinAgentVersion="0.1.0".
+	var hbResp api.HeartbeatResponse
+	if err := json.NewDecoder(rec.Body).Decode(&hbResp); err != nil {
+		t.Fatalf("decode heartbeat response: %v", err)
+	}
+	if hbResp.NextHeartbeatSeconds != 5 {
+		t.Errorf("NextHeartbeatSeconds = %d, want 5", hbResp.NextHeartbeatSeconds)
+	}
+	if hbResp.MinAgentVersion != "0.1.0" {
+		t.Errorf("MinAgentVersion = %q, want %q", hbResp.MinAgentVersion, "0.1.0")
+	}
+
+	// GET /v1/workers shows the worker online with right hostname and last.cpu_percent.
+	listReq := httptest.NewRequest(http.MethodGet, "/v1/workers", nil)
+	listRec := httptest.NewRecorder()
+	h.ServeHTTP(listRec, listReq)
+
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want 200", listRec.Code)
+	}
+	var workers []*registry.View
+	if err := json.NewDecoder(listRec.Body).Decode(&workers); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	if len(workers) != 1 {
+		t.Fatalf("list has %d workers, want 1", len(workers))
+	}
+	if workers[0].Hostname != "host-a" {
+		t.Errorf("hostname = %q, want %q", workers[0].Hostname, "host-a")
+	}
+	if workers[0].Status != "online" {
+		t.Errorf("status = %q, want %q", workers[0].Status, "online")
+	}
+	if workers[0].Last.CPUPercent != 5 {
+		t.Errorf("last.cpu_percent = %v, want 5", workers[0].Last.CPUPercent)
+	}
+}
+
+func TestHandleListWorkersSecurity(t *testing.T) {
+	reg := registry.New(nil)
+	s := &Server{reg: reg, log: slog.Default()}
+	reg.Register("wrk_test", "host-a", "darwin", "amd64", 0, 4, 8_000_000_000, hexHash("s3cret"))
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/workers", s.handleListWorkers)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/workers", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+
+	// No secret and no hash anywhere in the JSON.
+	lower := strings.ToLower(body)
+	if strings.Contains(lower, "secret") {
+		t.Errorf("list response contains 'secret': %s", body)
+	}
+	if strings.Contains(lower, "hash") {
+		t.Errorf("list response contains 'hash': %s", body)
+	}
+	// snake_case JSON tags on View.
+	for _, k := range []string{`"id"`, `"hostname"`, `"os"`, `"arch"`, `"cpu_model"`, `"cpu_cores"`, `"ram_total_bytes"`, `"labels"`, `"last_seen"`, `"status"`, `"last"`} {
+		if !strings.Contains(body, k) {
+			t.Errorf("list response missing key %s in %s", k, body)
+		}
+	}
+}
+
+func TestHandleListWorkersEmptyReturnsNotNull(t *testing.T) {
+	reg := registry.New(nil)
+	s := &Server{reg: reg, log: slog.Default()}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/workers", s.handleListWorkers)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/workers", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	body := strings.TrimSpace(rec.Body.String())
+	if body != "[]" {
+		t.Errorf("empty registry returned %q, want %q (not null)", body, "[]")
+	}
+}
+
+func TestWorkerStatusWithFakeClock(t *testing.T) {
+	// Deterministic fake clock injected into the registry.
+	var mu sync.Mutex
+	var current time.Time = time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC)
+	now := func() time.Time {
+		mu.Lock()
+		defer mu.Unlock()
+		return current
+	}
+	advance := func(d time.Duration) {
+		mu.Lock()
+		defer mu.Unlock()
+		current = current.Add(d)
+	}
+
+	reg := registry.New(now)
+	reg.Register("wrk_test", "host-a", "darwin", "amd64", 0, 4, 8_000_000_000, hexHash("s3cret"))
+
+	h := NewHandler(reg)
+
+	// Send a heartbeat to stamp LastSeen at current time.
+	body := `{"worker_id":"wrk_test","seq":1,"agent_version":"0.1.0","cpu_percent":5,"ram_total_bytes":8000000000,"ram_available_bytes":4000000000,"active_tasks":0,"loaded_models":[]}`
+	hbReq := httptest.NewRequest(http.MethodPost, "/v1/workers/wrk_test/heartbeat", strings.NewReader(body))
+	hbReq.Header.Set("Authorization", "Bearer s3cret")
+	hbRec := httptest.NewRecorder()
+	h.ServeHTTP(hbRec, hbReq)
+	if hbRec.Code != http.StatusOK {
+		t.Fatalf("heartbeat status = %d, want 200", hbRec.Code)
+	}
+
+	getStatus := func() string {
+		req := httptest.NewRequest(http.MethodGet, "/v1/workers", nil)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		var workers []*registry.View
+		if err := json.NewDecoder(rec.Body).Decode(&workers); err != nil {
+			t.Fatalf("decode list: %v", err)
+		}
+		if len(workers) != 1 {
+			t.Fatalf("got %d workers, want 1", len(workers))
+		}
+		return workers[0].Status
+	}
+
+	// online immediately after heartbeat.
+	if got := getStatus(); got != "online" {
+		t.Errorf("at 0s: status = %q, want %q", got, "online")
+	}
+
+	// advance 20s -> stale.
+	advance(20 * time.Second)
+	if got := getStatus(); got != "stale" {
+		t.Errorf("at 20s: status = %q, want %q", got, "stale")
+	}
+
+	// advance to 50s total -> offline.
+	advance(30 * time.Second)
+	if got := getStatus(); got != "offline" {
+		t.Errorf("at 50s: status = %q, want %q", got, "offline")
 	}
 }
