@@ -57,7 +57,7 @@ func TestHeartbeatJSONRoundTrip(t *testing.T) {
 		t.Fatalf("marshal: %v", err)
 	}
 
-	// Every field must be present under its snake_case key.
+	// Every field must be present under its exact snake_case key.
 	var raw map[string]any
 	if err := json.Unmarshal(data, &raw); err != nil {
 		t.Fatalf("unmarshal into map: %v", err)
@@ -87,6 +87,29 @@ func TestHeartbeatJSONRoundTrip(t *testing.T) {
 	got.SentAt, orig.SentAt = time.Time{}, time.Time{}
 	if !reflect.DeepEqual(got, orig) {
 		t.Errorf("round trip mismatch:\n got  %+v\n want %+v", got, orig)
+	}
+}
+
+func TestHeartbeatResponseJSONKeys(t *testing.T) {
+	resp := HeartbeatResponse{NextHeartbeatSeconds: 5, MinAgentVersion: "0.1.0"}
+
+	data, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	// Assert the exact wire keys that the agent will depend on in Step 1.8.
+	want := `{"next_heartbeat_seconds":5,"min_agent_version":"0.1.0"}`
+	if string(data) != want {
+		t.Errorf("HeartbeatResponse JSON = %s, want %s", data, want)
+	}
+
+	var got HeartbeatResponse
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got != resp {
+		t.Errorf("round trip mismatch: got %+v, want %+v", got, resp)
 	}
 }
 

@@ -28,8 +28,8 @@ type Heartbeat struct {
 	LoadedModels      []string  `json:"loaded_models"`
 }
 type HeartbeatResponse struct {
-	NextHeartbeatSeconds int    `json:"next_heartbeat_second"`
-	MinAgentVersion      string `json:"mini_agent_version"`
+	NextHeartbeatSeconds int    `json:"next_heartbeat_seconds"`
+	MinAgentVersion      string `json:"min_agent_version"`
 }
 
 func (h Heartbeat) Validate() error {
