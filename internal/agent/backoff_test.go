@@ -18,6 +18,10 @@ func TestBackoffJitterRange(t *testing.T) {
 	if got := Backoff(attempt, base, max, rnd0); got != d/2 {
 		t.Errorf("rnd=0: got %v, want exactly d/2=%v", got, d/2)
 	}
+	// must not pass trivially when Backoff returns 0:
+	if got := Backoff(attempt, base, max, rnd0); got <= 0 && base > 0 {
+		t.Errorf("rnd=0: got %v, want > 0 for base > 0", got)
+	}
 
 	got := Backoff(attempt, base, max, rnd999999)
 	if got <= d/2 {
@@ -49,6 +53,9 @@ func TestBackoffGrowthTable(t *testing.T) {
 	for _, tc := range tests {
 		if got := Backoff(tc.attempt, base, max, rnd0); got != tc.want {
 			t.Errorf("attempt=%d rnd=0: got %v, want %v", tc.attempt, got, tc.want)
+		}
+		if got := Backoff(tc.attempt, base, max, rnd0); got <= 0 && base > 0 {
+			t.Errorf("attempt=%d: got %v, want > 0 for base > 0", tc.attempt, got)
 		}
 	}
 }
